@@ -1,0 +1,5 @@
+# Mana & Coins Game Economy - Project Dependencies
+# Install with: pip install -r requirements.txt
+
+pandas>=2.0.0
+ipykernel>=6.29.0
