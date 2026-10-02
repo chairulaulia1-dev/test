@@ -1,0 +1,5 @@
+sku_id,name,usd_price,tier
+coin_drops,Drops,0.99,1
+coin_bag,Bag,4.99,2
+coin_chest,Chest,9.99,3
+coin_barrel,Barrel,19.99,4
