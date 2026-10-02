@@ -1,4 +1,4 @@
-sku_id,name,usd_price,tier
+item_id,item_name,price_usd,price_tier
 coin_drops,Drops,0.99,1
 coin_bag,Bag,4.99,2
 coin_chest,Chest,9.99,3

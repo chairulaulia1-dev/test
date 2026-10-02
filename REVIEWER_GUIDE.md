@@ -55,9 +55,9 @@ data_analyst_test/
 │   ├── schema_design.md                      <-- DDL Architecture, Data Dictionary & Scenario Mapping
 │   ├── task1_data_modeling.ipynb             <-- Standalone Task 1 Interactive Notebook
 │   ├── transactions_sample.csv               <-- Unified single-ledger sample dataset (18 rows)
-│   ├── dim_iap_catalog.csv                   <-- IAP bundle SKU catalog dimension
-│   ├── dim_user_state.csv                    <-- User balance & progression snapshot dimension
-│   └── dim_level_economy_curve.csv           <-- Inflation lookup matrix (Levels 1 to 20)
+│   ├── dim_shop_item.csv                     <-- Store bundles & item pricing dimension
+│   ├── dim_user.csv                          <-- Player balance & progression snapshot dimension
+│   └── dim_game_level.csv                    <-- Game level progression & economy lookup matrix
 │
 ├── release2_data_validation/                 <-- MILESTONE 2 (TASK 2: DATA VALIDATION & ANTI-CHEAT)
 │   ├── validation_rules.md                   <-- Threat Modeling (7 failure modes) & 10 Plain English rules

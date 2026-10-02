@@ -14,23 +14,23 @@ WITH running_balances AS (
     SELECT
         transaction_id,
         user_id,
-        currency_type,
-        timestamp,
+        currency,
+        created_at,
         amount,
-        verification_status,
-        SUM(CASE WHEN verification_status = 'SETTLED' THEN amount ELSE 0 END) OVER (
-            PARTITION BY user_id, currency_type
-            ORDER BY timestamp ASC, transaction_id ASC
+        status,
+        SUM(CASE WHEN status = 'SETTLED' THEN amount ELSE 0 END) OVER (
+            PARTITION BY user_id, currency
+            ORDER BY created_at ASC, transaction_id ASC
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS current_running_balance
-    FROM ledger_transactions
-    WHERE currency_type IN ('MANA', 'COIN')
+    FROM fact_transactions
+    WHERE currency IN ('MANA', 'COIN')
 )
 SELECT
     transaction_id,
     user_id,
-    currency_type,
-    timestamp,
+    currency,
+    created_at,
     amount,
     current_running_balance,
     'CRITICAL: Running balance dropped below zero!' AS audit_alert
@@ -44,17 +44,17 @@ WHERE current_running_balance < 0;
 -- Severity: CRITICAL (Indicates financial loss due to duplicate coin grants)
 -- -----------------------------------------------------------------------------
 SELECT
-    external_txn_id,
+    external_transaction_id,
     COUNT(*) AS total_settled_credit_events,
     SUM(amount) AS total_coins_granted,
     STRING_AGG(transaction_id, ', ') AS duplicate_txn_ids,
     'CRITICAL: Duplicate coin credit detected for single external order!' AS audit_alert
-FROM ledger_transactions
-WHERE currency_type = 'COIN'
+FROM fact_transactions
+WHERE currency = 'COIN'
   AND amount > 0
-  AND verification_status = 'SETTLED'
-  AND external_txn_id IS NOT NULL
-GROUP BY external_txn_id
+  AND status = 'SETTLED'
+  AND external_transaction_id IS NOT NULL
+GROUP BY external_transaction_id
 HAVING COUNT(*) > 1;
 
 
@@ -67,20 +67,20 @@ WITH action_formula_check AS (
     SELECT
         transaction_id,
         user_id,
-        timestamp,
+        created_at,
         user_level,
         amount AS actual_mana_deducted,
         -- Formula: round(3 * (user_level ^ 1.1))
         ROUND(3.0 * POWER(user_level, 1.1)) AS expected_mana_cost
-    FROM ledger_transactions
+    FROM fact_transactions
     WHERE event_type = 'ACTION_SPEND'
-      AND currency_type = 'MANA'
-      AND verification_status = 'SETTLED'
+      AND currency = 'MANA'
+      AND status = 'SETTLED'
 )
 SELECT
     transaction_id,
     user_id,
-    timestamp,
+    created_at,
     user_level,
     actual_mana_deducted,
     -expected_mana_cost AS expected_signed_amount,
@@ -98,14 +98,14 @@ WHERE actual_mana_deducted != -expected_mana_cost;
 SELECT
     transaction_id,
     user_id,
-    timestamp,
-    source,
+    created_at,
+    source_system,
     amount,
-    verification_status,
+    status,
     'CRITICAL: Untrusted client source directly modified currency balance!' AS audit_alert
-FROM ledger_transactions
-WHERE source = 'CLIENT_CALLBACK'
-  AND (amount != 0 OR verification_status = 'SETTLED');
+FROM fact_transactions
+WHERE source_system = 'CLIENT_CALLBACK'
+  AND (amount != 0 OR status = 'SETTLED');
 
 
 -- -----------------------------------------------------------------------------
@@ -116,14 +116,14 @@ WHERE source = 'CLIENT_CALLBACK'
 SELECT
     transaction_id,
     user_id,
-    external_txn_id,
-    timestamp AS claim_timestamp,
-    NOW() - timestamp AS elapsed_time,
-    verification_status,
+    external_transaction_id,
+    created_at AS claim_timestamp,
+    NOW() - created_at AS elapsed_time,
+    status,
     'WARNING: Transaction stuck in PENDING_VERIFICATION beyond 15-minute SLA' AS audit_alert
-FROM ledger_transactions
-WHERE verification_status = 'PENDING_VERIFICATION'
-  AND timestamp < (NOW() - INTERVAL '15 minutes');
+FROM fact_transactions
+WHERE status = 'PENDING_VERIFICATION'
+  AND created_at < (NOW() - INTERVAL '15 minutes');
 
 
 -- -----------------------------------------------------------------------------
@@ -138,10 +138,10 @@ SELECT
     amount AS actual_coins_deducted,
     -ROUND(3.0 * POWER(capacity_level, 2.2)) AS expected_coins_cost,
     'HIGH: Capacity upgrade cost mismatch' AS audit_alert
-FROM ledger_transactions
+FROM fact_transactions
 WHERE event_type = 'UPGRADE_CAPACITY'
-  AND currency_type = 'COIN'
-  AND verification_status = 'SETTLED'
+  AND currency = 'COIN'
+  AND status = 'SETTLED'
   AND amount != -ROUND(3.0 * POWER(capacity_level, 2.2));
 
 
@@ -153,7 +153,7 @@ WHERE event_type = 'UPGRADE_CAPACITY'
 WITH hourly_spending AS (
     SELECT
         user_id,
-        DATE_TRUNC('hour', timestamp) AS tx_hour,
+        DATE_TRUNC('hour', created_at) AS tx_hour,
         MAX(capacity_level) AS cap_level,
         MAX(speed_level) AS spd_level,
         -- Total mana spent in the hour (absolute value)
@@ -161,9 +161,9 @@ WITH hourly_spending AS (
         -- Max possible mana = capacity limit + (speed * 1.5 * 2x boost margin)
         ROUND(MAX((3.0 * POWER(capacity_level, 1.1)) * 30.0) + 
               MAX((3.0 * POWER(speed_level, 1.1)) * 1.5 * 2.0)) AS theoretical_max_mana_possible
-    FROM ledger_transactions
-    WHERE currency_type = 'MANA'
-    GROUP BY user_id, DATE_TRUNC('hour', timestamp)
+    FROM fact_transactions
+    WHERE currency = 'MANA'
+    GROUP BY user_id, DATE_TRUNC('hour', created_at)
 )
 SELECT
     user_id,

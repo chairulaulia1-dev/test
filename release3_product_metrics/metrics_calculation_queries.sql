@@ -12,16 +12,16 @@
 WITH user_activity AS (
     SELECT
         COUNT(DISTINCT user_id) AS total_active_users
-    FROM ledger_transactions
+    FROM fact_transactions
 ),
 payer_activity AS (
     SELECT
         COUNT(DISTINCT user_id) AS unique_paying_users,
-        COUNT(DISTINCT external_txn_id) AS total_paid_orders,
+        COUNT(DISTINCT external_transaction_id) AS total_paid_orders,
         SUM(amount) AS gross_revenue_usd
-    FROM ledger_transactions
-    WHERE currency_type = 'FIAT_USD'
-      AND verification_status = 'SETTLED'
+    FROM fact_transactions
+    WHERE currency = 'FIAT_USD'
+      AND status = 'SETTLED'
 )
 SELECT
     pa.gross_revenue_usd,
@@ -41,18 +41,18 @@ CROSS JOIN user_activity ua;
 -- -----------------------------------------------------------------------------
 WITH currency_flows AS (
     SELECT
-        currency_type,
+        currency,
         -- Sources: amount > 0
         SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS total_sources_ingested,
         -- Sinks: amount < 0 (take absolute value)
         SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) AS total_sinks_consumed
-    FROM ledger_transactions
-    WHERE currency_type IN ('MANA', 'COIN')
-      AND verification_status = 'SETTLED'
-    GROUP BY currency_type
+    FROM fact_transactions
+    WHERE currency IN ('MANA', 'COIN')
+      AND status = 'SETTLED'
+    GROUP BY currency
 )
 SELECT
-    currency_type,
+    currency,
     total_sources_ingested,
     total_sinks_consumed,
     ROUND(CAST(total_sinks_consumed AS REAL) / NULLIF(total_sources_ingested, 0), 3) AS sink_to_source_ratio,
@@ -72,10 +72,10 @@ WITH coin_sinks AS (
     SELECT
         event_type,
         SUM(ABS(amount)) AS coins_spent
-    FROM ledger_transactions
-    WHERE currency_type = 'COIN'
+    FROM fact_transactions
+    WHERE currency = 'COIN'
       AND amount < 0
-      AND verification_status = 'SETTLED'
+      AND status = 'SETTLED'
     GROUP BY event_type
 ),
 total_spent AS (
@@ -96,17 +96,17 @@ ORDER BY cs.coins_spent DESC;
 -- -----------------------------------------------------------------------------
 SELECT
     user_level,
-    SUM(CASE WHEN currency_type = 'COIN' AND amount > 0 THEN amount ELSE 0 END) AS coins_granted,
-    SUM(CASE WHEN currency_type = 'FIAT_USD' THEN amount ELSE 0 END) AS usd_paid,
+    SUM(CASE WHEN currency = 'COIN' AND amount > 0 THEN amount ELSE 0 END) AS coins_granted,
+    SUM(CASE WHEN currency = 'FIAT_USD' THEN amount ELSE 0 END) AS usd_paid,
     ROUND(
-        SUM(CASE WHEN currency_type = 'COIN' AND amount > 0 THEN amount ELSE 0 END) /
-        NULLIF(SUM(CASE WHEN currency_type = 'FIAT_USD' THEN amount ELSE 0 END), 0),
+        SUM(CASE WHEN currency = 'COIN' AND amount > 0 THEN amount ELSE 0 END) /
+        NULLIF(SUM(CASE WHEN currency = 'FIAT_USD' THEN amount ELSE 0 END), 0),
         2
     ) AS realized_cpd
-FROM ledger_transactions
+FROM fact_transactions
 WHERE event_type IN ('IAP_PURCHASE', 'IAP_REVENUE')
-  AND verification_status = 'SETTLED'
-GROUP BY user_level;
+  AND status = 'SETTLED'
+  GROUP BY user_level;
 
 
 -- -----------------------------------------------------------------------------
@@ -114,14 +114,14 @@ GROUP BY user_level;
 -- Business Goal: Monitor the percentage of fake/hacked payment callbacks.
 -- -----------------------------------------------------------------------------
 SELECT
-    COUNT(DISTINCT c.external_txn_id) AS total_orders_claimed,
-    COUNT(DISTINCT CASE WHEN r.verification_status = 'REJECTED' THEN c.external_txn_id END) AS ghost_attempts_detected,
+    COUNT(DISTINCT c.external_transaction_id) AS total_orders_claimed,
+    COUNT(DISTINCT CASE WHEN r.status = 'REJECTED' THEN c.external_transaction_id END) AS ghost_attempts_detected,
     ROUND(
-        (CAST(COUNT(DISTINCT CASE WHEN r.verification_status = 'REJECTED' THEN c.external_txn_id END) AS REAL) /
-        COUNT(DISTINCT c.external_txn_id)) * 100.0,
+        (CAST(COUNT(DISTINCT CASE WHEN r.status = 'REJECTED' THEN c.external_transaction_id END) AS REAL) /
+        COUNT(DISTINCT c.external_transaction_id)) * 100.0,
         1
     ) AS ghost_claim_rate_pct
-FROM ledger_transactions c
-LEFT JOIN ledger_transactions r
-    ON c.external_txn_id = r.external_txn_id AND r.verification_status = 'REJECTED'
-WHERE c.source = 'CLIENT_CALLBACK' AND c.external_txn_id IS NOT NULL;
+FROM fact_transactions c
+LEFT JOIN fact_transactions r
+    ON c.external_transaction_id = r.external_transaction_id AND r.status = 'REJECTED'
+WHERE c.source_system = 'CLIENT_CALLBACK' AND c.external_transaction_id IS NOT NULL;

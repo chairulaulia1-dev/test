@@ -22,7 +22,7 @@ The matrix below evaluates seven critical failure modes and their corresponding 
 | :- | :--- | :--- | :--- | :--- |
 | **1** | **Device Clock Manipulation (Time Travel Hack)** | Player advances phone clock (e.g., +10 hours) to force background Mana to refill instantly. | **CRITICAL** | **Server-Authoritative Clock:** Regeneration is calculated strictly via server timestamps (`TIMESTAMPTZ`), ignoring client local device time. |
 | **2** | **Ghost Purchase Claims (Fake Callback Injection)** | Hacker intercepts or patches client APK to bypass PG UI and send fake success claims to the backend. | **CRITICAL** | **Zero-Trust State Machine:** Records from `CLIENT_CALLBACK` are set to `amount = 0` with status `PENDING_VERIFICATION`. Coins are **NEVER credited** until verified by a trusted S2S webhook. |
-| **3** | **Replay Attacks / Duplicate Credit** | Payment gateway retries webhook due to network lag, or a malicious user replays successful HTTP requests. | **HIGH** | **Strict Idempotency Invariant:** Every `external_txn_id` is restricted to $\le 1$ positive settled coin credit (`amount > 0` and `status = 'SETTLED'`). Subsequent attempts are marked `DUPLICATE_IGNORED`. |
+| **3** | **Replay Attacks / Duplicate Credit** | Payment gateway retries webhook due to network lag, or a malicious user replays successful HTTP requests. | **HIGH** | **Strict Idempotency Invariant:** Every `external_transaction_id` is restricted to $\le 1$ positive settled coin credit (`amount > 0` and `status = 'SETTLED'`). Subsequent attempts are marked `DUPLICATE_IGNORED`. |
 | **4** | **Race Condition / Double Spending** | Player has 3 Mana remaining and taps the action button simultaneously across multiple threads. | **HIGH** | **Atomic Serialization / Invariant Assertion:** The backend executes atomic balance checks. If running balance $<$ action cost, the second request fails with `INSUFFICIENT_FUNDS`. |
 | **5** | **Formula & Version Drift** | Outdated client version calculates action Mana deductions using deprecated formulas rather than $m_a = \text{round}(3 \times L^{1.1})$. | **MEDIUM** | **Server-Side Formula Validation:** Every `ACTION_SPEND` deduction is validated against the user's level ($L$). Any discrepancy is rejected and logged to telemetry. |
 | **6** | **Capacity Overflow Bypass** | Background recharge keeps adding Mana beyond the capacity ceiling without player purchasing Mana with Coins. | **HIGH** | **Recharge Invariant Check:** `RECHARGE_TICK` events cannot increase balance beyond `capacity_limit(L_C)`. If pre-recharge balance $\ge$ capacity, recharge delta is strictly 0. |
@@ -44,7 +44,7 @@ These rules are formulated in plain English logic, structured to align directly 
 
 ### B. Payment Reconciliation & Anti-Fraud Rules
 4. **Rule 2.1 (Strict Idempotency on External Transactions):**  
-   *"For any valid `external_txn_id` issued by the Payment Gateway, there must be exactly one settled credit event (`amount > 0` with `status = 'SETTLED'`). Any count greater than 1 represents a critical duplicate balance breach."*
+   *"For any valid `external_transaction_id` issued by the Payment Gateway, there must be exactly one settled credit event (`amount > 0` with `status = 'SETTLED'`). Any count greater than 1 represents a critical duplicate balance breach."*
 5. **Rule 2.2 (Untrusted Client Zero-Credit Invariant):**  
    *"Any transaction record originating from `CLIENT_CALLBACK` must carry an amount of 0 and be assigned a verification status of `PENDING_VERIFICATION`."*
 6. **Rule 2.3 (Reconciliation SLA Timeout):**  
